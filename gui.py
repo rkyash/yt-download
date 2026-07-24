@@ -586,7 +586,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=16, weight="bold"),
             command=self._add_to_queue,
         )
-        self._dl_btn.grid(row=4, column=0, sticky="ew", padx=20, pady=(8, 24))
+        self._dl_btn.grid(row=5, column=0, sticky="ew", padx=20, pady=(8, 24))
         self._dl_btn.grid_remove()
 
         # ---- Status message ----
@@ -596,7 +596,134 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color=("gray50", "gray60"),
         )
-        self._status_label.grid(row=5, column=0, sticky="w", padx=28, pady=(0, 8))
+        self._status_label.grid(row=6, column=0, sticky="w", padx=28, pady=(0, 8))
+
+        # ---- Split download card (row 4, hidden initially) ----
+        self._split_card = Card(page)
+        self._split_card.grid(row=4, column=0, sticky="ew", padx=20, pady=4)
+        self._split_card.grid_columnconfigure(0, weight=1)
+        self._split_card.grid_remove()
+        self._build_split_card(self._split_card)
+
+    # ==================================================================
+    # SPLIT DOWNLOAD CARD
+    # ==================================================================
+
+    def _build_split_card(self, parent: ctk.CTkFrame) -> None:
+        """Build the split-download control panel."""
+        # Header row: toggle + label
+        header = ctk.CTkFrame(parent, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
+        header.grid_columnconfigure(1, weight=1)
+
+        self._split_enabled = tk.BooleanVar(value=False)
+        ctk.CTkSwitch(
+            header,
+            text="",
+            variable=self._split_enabled,
+            onvalue=True, offvalue=False,
+            command=self._on_split_toggle,
+            width=46,
+        ).grid(row=0, column=0, padx=(0, 8))
+
+        ctk.CTkLabel(
+            header,
+            text="✂  Split into multiple parts",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).grid(row=0, column=1, sticky="w")
+
+        # Controls row (hidden when disabled)
+        self._split_controls = ctk.CTkFrame(parent, fg_color="transparent")
+        self._split_controls.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 4))
+        self._split_controls.grid_columnconfigure(2, weight=1)
+        self._split_controls.grid_remove()
+
+        ctk.CTkLabel(
+            self._split_controls,
+            text="Number of parts:",
+            font=ctk.CTkFont(size=12),
+        ).grid(row=0, column=0, padx=(0, 8), pady=4)
+
+        self._num_parts_var = tk.StringVar(value="2")
+        parts_menu = ctk.CTkOptionMenu(
+            self._split_controls,
+            values=[str(n) for n in range(2, 11)],
+            variable=self._num_parts_var,
+            width=80,
+            command=lambda _: self._refresh_split_table(),
+        )
+        parts_menu.grid(row=0, column=1, padx=(0, 16), pady=4)
+
+        self._split_info_label = ctk.CTkLabel(
+            self._split_controls,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray50", "gray60"),
+        )
+        self._split_info_label.grid(row=0, column=2, sticky="w")
+
+        # Table of parts
+        self._split_table = ctk.CTkFrame(parent, fg_color="transparent")
+        self._split_table.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
+        self._split_table.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        self._split_table.grid_remove()
+
+    def _on_split_toggle(self) -> None:
+        """Show/hide the split controls when the toggle changes."""
+        if self._split_enabled.get():
+            self._split_controls.grid()
+            self._split_table.grid()
+            self._refresh_split_table()
+        else:
+            self._split_controls.grid_remove()
+            self._split_table.grid_remove()
+
+    def _refresh_split_table(self) -> None:
+        """Rebuild the parts table based on current video duration and part count."""
+        # Clear existing table rows
+        for widget in self._split_table.winfo_children():
+            widget.destroy()
+
+        info = self._current_info
+        if not info or not info.duration:
+            self._split_info_label.configure(
+                text="⚠ Duration unknown — parts will be estimated during download")
+            return
+
+        total_sec = info.duration
+        n = int(self._num_parts_var.get())
+        part_sec = total_sec / n
+
+        self._split_info_label.configure(
+            text=f"Total: {format_duration(total_sec)}  ·  Each part ≈ {format_duration(int(part_sec))}")
+
+        # Column headers
+        for col, text in enumerate(("Part", "Start", "End", "Duration")):
+            ctk.CTkLabel(
+                self._split_table, text=text,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=("gray50", "gray60"),
+            ).grid(row=0, column=col, sticky="w", padx=8, pady=(4, 2))
+
+        # One row per part
+        for i in range(n):
+            start = int(i * part_sec)
+            end   = int((i + 1) * part_sec) if i < n - 1 else total_sec
+            dur   = end - start
+
+            bg = ("gray88", "gray22") if i % 2 == 0 else ("gray82", "gray18")
+            for col, val in enumerate((
+                f"Part {i + 1} of {n}",
+                format_duration(start),
+                format_duration(end),
+                format_duration(dur),
+            )):
+                ctk.CTkLabel(
+                    self._split_table, text=val,
+                    font=ctk.CTkFont(size=12),
+                    fg_color=bg, corner_radius=6,
+                ).grid(row=i + 1, column=col, sticky="ew",
+                       padx=4, pady=2, ipadx=6, ipady=4)
 
     # ==================================================================
     # QUEUE PAGE
@@ -924,6 +1051,16 @@ class App(ctk.CTk):
         self._dl_btn.grid()
         self._set_status("✅ Ready to download.")
 
+        # Show split card (only for single videos, not playlists)
+        if not info.is_playlist:
+            self._split_card.grid()
+            # Reset split toggle to off when a new video is fetched
+            self._split_enabled.set(False)
+            self._split_controls.grid_remove()
+            self._split_table.grid_remove()
+        else:
+            self._split_card.grid_remove()
+
         # Load thumbnail in background
         if info.thumbnail_url:
             threading.Thread(
@@ -981,7 +1118,7 @@ class App(ctk.CTk):
             self._set_status("⚠ Please select a download folder.", error=True)
             return
 
-        # Playlist: ask user
+        # ── Playlist ────────────────────────────────────────────────────
         if info.is_playlist:
             count = len(info.playlist_entries)
             answer = messagebox.askyesno(
@@ -1006,6 +1143,41 @@ class App(ctk.CTk):
                     self._add_task_to_ui(task)
             return
 
+        # ── Split download ───────────────────────────────────────────────
+        if self._split_enabled.get() and info.duration:
+            n = int(self._num_parts_var.get())
+            total_sec = info.duration
+            part_sec = total_sec / n
+
+            for i in range(n):
+                start = int(i * part_sec)
+                end   = int((i + 1) * part_sec) if i < n - 1 else total_sec
+                part_title = f"{info.title} — Part {i + 1} of {n}"
+
+                task = self._make_task(
+                    url=url,
+                    title=info.title,
+                    download_type=download_type,
+                    quality=quality,
+                    folder=folder,
+                    template=template,
+                    cookies=cookies,
+                    thumbnail_url=info.thumbnail_url or "",
+                    duration=end - start,
+                    uploader=info.uploader,
+                    start_time=start,
+                    end_time=end,
+                    part_number=i + 1,
+                    total_parts=n,
+                    display_title=part_title,
+                )
+                self._add_task_to_ui(task)
+
+            self._set_status(
+                f'✅ Added "{info.title}" as {n} parts to the queue.')
+            return
+
+        # ── Single download ──────────────────────────────────────────────
         task = self._make_task(
             url=url,
             title=info.title,
@@ -1025,12 +1197,17 @@ class App(ctk.CTk):
         self, url: str, title: str, download_type: str, quality: str,
         folder: str, template: str, cookies: str,
         thumbnail_url: str, duration: Optional[int], uploader: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        part_number: int = 0,
+        total_parts: int = 0,
+        display_title: str = "",
     ) -> DownloadTask:
         task_id = self._queue.next_task_id()
         return DownloadTask(
             task_id=task_id,
             url=url,
-            title=title,
+            title=display_title or title,
             download_type=download_type,
             quality=quality,
             output_folder=folder,
@@ -1039,6 +1216,10 @@ class App(ctk.CTk):
             thumbnail_url=thumbnail_url,
             duration=duration,
             uploader=uploader,
+            start_time=start_time,
+            end_time=end_time,
+            part_number=part_number,
+            total_parts=total_parts,
         )
 
     def _add_task_to_ui(self, task: DownloadTask) -> None:

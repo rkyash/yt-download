@@ -21,9 +21,11 @@ logger = logging.getLogger(__name__)
 
 YOUTUBE_URL_PATTERN = re.compile(
     r"(https?://)?(www\.)?"
-    r"(youtube\.com/(watch\?v=|embed/|shorts/|playlist\?list=)"
-    r"|youtu\.be/)"
-    r"[\w\-_]+"
+    r"("
+    r"youtube\.com/(watch\?v=|embed/|shorts/|live/|v/|e/|playlist\?list=)"
+    r"|youtu\.be/"
+    r")"
+    r"[\w\-_]+"  # video / playlist ID
 )
 
 PLAYLIST_URL_PATTERN = re.compile(

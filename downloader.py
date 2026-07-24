@@ -89,6 +89,11 @@ class DownloadTask:
     duration: Optional[int] = None
     retries: int = 0
     max_retries: int = 3
+    # Split-download fields (0 / None = no splitting)
+    start_time: Optional[int] = None   # seconds from start
+    end_time: Optional[int] = None     # seconds from start
+    part_number: int = 0               # 1-based (0 = not a split task)
+    total_parts: int = 0               # total number of parts
 
 
 # ---------------------------------------------------------------------------
@@ -326,18 +331,17 @@ class Downloader:
 
         fmt = _build_format_string(self.task.download_type, self.task.quality)
 
-        # Build outtmpl from the task's template
-        info_stub = {
-            "title": self.task.title,
-            "uploader": self.task.uploader,
-            "id": "",
-            "ext": "mp4",
-        }
         safe_title = sanitize_filename(self.task.title)
+
+        # For split tasks append "_part_N_of_M" so each part saves separately
+        if self.task.part_number and self.task.total_parts:
+            part_suffix = f"_part_{self.task.part_number}_of_{self.task.total_parts}"
+        else:
+            part_suffix = ""
 
         outtmpl = os.path.join(
             self.task.output_folder,
-            safe_title + ".%(ext)s",
+            safe_title + part_suffix + ".%(ext)s",
         )
 
         opts: dict = {
@@ -379,6 +383,21 @@ class Downloader:
                     "preferedformat": "mp4",   # yt-dlp spelling (one 'r')
                 }
             ]
+
+        # ── Split / trim section ──────────────────────────────────────────────
+        # Use yt-dlp's download_ranges to fetch only the requested slice.
+        # force_keyframes_at_cuts ensures FFmpeg cuts on a clean frame boundary
+        # so the trimmed clip starts/ends without glitches.
+        if self.task.start_time is not None and self.task.end_time is not None:
+            try:
+                from yt_dlp.utils import download_range_func
+                opts["download_ranges"] = download_range_func(
+                    None,
+                    [(self.task.start_time, self.task.end_time)]
+                )
+                opts["force_keyframes_at_cuts"] = True
+            except Exception as exc:
+                logger.warning("download_range_func not available: %s", exc)
 
         # Cookies
         if self.task.cookies_file and os.path.isfile(self.task.cookies_file):
