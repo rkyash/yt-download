@@ -55,8 +55,13 @@ git clone <repo-url>
 cd yt-download
 ```
 
-### 2. Create a virtual environment (recommended)
+### 2. Setup & Install Dependencies
 
+You can set up the project using either `pip` or `uv` (recommended for faster dependency resolution).
+
+#### Option A: Using `pip`
+
+Create and activate a virtual environment:
 ```bash
 python -m venv .venv
 # Windows
@@ -65,13 +70,20 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install Python dependencies
-
+Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Install FFmpeg
+#### Option B: Using `uv`
+
+If you have [uv](https://docs.astral.sh/uv/) installed, you can simply sync the dependencies:
+```bash
+uv sync
+```
+*This automatically creates a `.venv` virtual environment and installs all required packages from `pyproject.toml`.*
+
+### 3. Install FFmpeg
 
 FFmpeg is required for merging video+audio streams and audio extraction.
 
@@ -96,8 +108,14 @@ sudo apt update && sudo apt install ffmpeg -y
 
 ## ▶ Running the Application
 
+If you used **pip** (make sure your virtual environment is activated):
 ```bash
 python main.py
+```
+
+If you used **uv**:
+```bash
+uv run main.py
 ```
 
 ---
