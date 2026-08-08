@@ -16,7 +16,10 @@ import traceback
 # Log file setup  (works for both script and PyInstaller .exe)
 # ---------------------------------------------------------------------------
 
-LOG_DIR = os.path.join(os.path.expanduser("~"), "AppData", "Local", "YTDownloader")
+if sys.platform == "win32":
+    LOG_DIR = os.path.join(os.path.expanduser("~"), "AppData", "Local", "YTDownloader")
+else:
+    LOG_DIR = os.path.join(os.path.expanduser("~"), ".local", "share", "YTDownloader")
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "error.log")
 

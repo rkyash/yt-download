@@ -21,13 +21,14 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def get_ffmpeg_path() -> str:
-    """Finds the bundled ffmpeg.exe when running as a PyInstaller executable."""
+    """Finds the bundled ffmpeg binary when running as a PyInstaller executable."""
+    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
     if getattr(sys, 'frozen', False):
-        # The app is running as a bundled PyInstaller .exe
-        return os.path.join(sys._MEIPASS, 'ffmpeg.exe')
+        # The app is running as a bundled PyInstaller executable
+        return os.path.join(sys._MEIPASS, ffmpeg_name)
     else:
         # The app is running as a normal Python script
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg.exe')
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), ffmpeg_name)
 
 
 # ---------------------------------------------------------------------------
