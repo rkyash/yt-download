@@ -1105,6 +1105,52 @@ class App(ctk.CTk):
         self._fetching = False
         self._fetch_btn.configure(state="normal", text="🔍 Fetch Info")
         self._set_status(f"❌ Error: {msg}", error=True)
+        # Also show a clear popup so the user can't miss it
+        friendly = self._friendly_error(msg)
+        messagebox.showerror(
+            "Could Not Fetch Video Info",
+            friendly,
+        )
+
+    @staticmethod
+    def _friendly_error(raw: str) -> str:
+        """Convert a raw exception message into a plain-English explanation."""
+        r = raw.lower()
+        if "ffmpeg" in r:
+            return (
+                "FFmpeg was not found.\n\n"
+                "If running from source: place ffmpeg.exe in the project folder.\n"
+                "If running the .exe: re-download it — the bundled FFmpeg may be missing."
+            )
+        if "video unavailable" in r or "private video" in r:
+            return "This video is unavailable or private. Please check the URL and try again."
+        if "sign in" in r or "age" in r or "login" in r:
+            return (
+                "This video requires sign-in or is age-restricted.\n\n"
+                "Fix: Go to Settings and provide a cookies file from your browser."
+            )
+        if "copyright" in r or "blocked" in r:
+            return "This video is blocked or restricted in your region."
+        if "urlopen error" in r or "getaddrinfo" in r or "connection" in r:
+            return (
+                "Could not connect to YouTube.\n\n"
+                "Please check your internet connection and try again."
+            )
+        if "no such format" in r or "requested format" in r:
+            return (
+                "The selected video quality is not available for this video.\n\n"
+                "Try choosing a lower quality (e.g. 720p or 480p)."
+            )
+        if "winError 5" in raw or "access is denied" in r:
+            return (
+                "Access Denied.\n\n"
+                "Try running the application as Administrator, "
+                "or choose a different download folder in Settings."
+            )
+        if "no space" in r or "disk" in r:
+            return "Not enough disk space. Please free up space and try again."
+        # Generic fallback
+        return f"An error occurred:\n\n{raw}"
 
     def _load_home_thumb(self, url: str) -> None:
         img = _load_thumbnail(url, (180, 101))
@@ -1342,5 +1388,14 @@ class App(ctk.CTk):
             row = self._queue_rows.get(task_id)
             if row:
                 row.update_ui()
+                # Show popup when a download finishes with an error
+                if task.status == DownloadStatus.ERROR and task.error_message:
+                    friendly = self._friendly_error(task.error_message)
+                    messagebox.showerror(
+                        f"Download Failed — {task.title[:50]}",
+                        friendly,
+                    )
+                    # Clear error_message so the popup doesn't fire again on next poll
+                    task.error_message = ""
 
         self.after(400, self._poll_updates)
