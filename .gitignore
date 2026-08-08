@@ -10,8 +10,6 @@ wheels/
 .venv
 .env
 
-# PyInstaller
-*.spec
 
 # IDEs
 .vscode/
