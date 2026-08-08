@@ -1,0 +1,119 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger when you push a tag like v1.0.0
+  workflow_dispatch: # Allows manual trigger from Actions tab
+
+jobs:
+  build-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Download FFmpeg (Linux static build)
+      run: |
+        wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+        tar xvf ffmpeg-release-amd64-static.tar.xz
+        find . -name "ffmpeg" -type f -exec mv {} . \;
+        chmod +x ffmpeg
+        
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller YTDownloader.spec
+
+    - name: Create .deb package
+      run: |
+        mkdir -p package/usr/bin
+        mkdir -p package/usr/share/applications
+        mkdir -p package/usr/share/icons/hicolor/256x256/apps
+        mkdir -p package/DEBIAN
+        
+        # Copy binary
+        cp dist/YTDownloader package/usr/bin/ytdownloader
+        chmod +x package/usr/bin/ytdownloader
+        
+        # Convert ICO to PNG for Linux desktop icon
+        sudo apt-get update && sudo apt-get install -y imagemagick
+        convert app_icon.ico[0] package/usr/share/icons/hicolor/256x256/apps/ytdownloader.png || true
+        
+        # Create Desktop entry
+        cat <<EOF > package/usr/share/applications/ytdownloader.desktop
+        [Desktop Entry]
+        Name=YT Downloader
+        Exec=/usr/bin/ytdownloader
+        Icon=ytdownloader
+        Type=Application
+        Categories=AudioVideo;Utility;
+        EOF
+        
+        # Create DEB control file
+        cat <<EOF > package/DEBIAN/control
+        Package: ytdownloader
+        Version: ${GITHUB_REF_NAME#v}
+        Architecture: amd64
+        Maintainer: Your Name
+        Description: YouTube Downloader application
+        EOF
+        
+        dpkg-deb --build package ytdownloader_amd64.deb
+
+    - name: Upload .deb Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: YTDownloader-Ubuntu-DEB
+        path: ytdownloader_amd64.deb
+        
+    - name: Upload to Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: ytdownloader_amd64.deb
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller YTDownloader.spec
+
+    - name: Build Windows Installer
+      run: |
+        iscc installer.iss
+
+    - name: Upload Installer Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: YTDownloader-Windows-Setup
+        path: dist\YTDownloader-Windows-Setup.exe
+
+    - name: Upload to Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: dist/YTDownloader-Windows-Setup.exe
