@@ -307,6 +307,22 @@ class App(ctk.CTk):
         self.geometry("1100x720")
         self.minsize(900, 600)
 
+        # Fix taskbar icon on Windows
+        if os.name == "nt":
+            try:
+                import ctypes
+                myappid = f"mycompany.ytdownloader.app.{APP_VERSION}"
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+            except Exception as e:
+                logger.warning(f"Could not set AppUserModelID: {e}")
+
+        icon_path = os.path.join(os.path.dirname(__file__), "app_icon.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception as e:
+                logger.warning(f"Could not load icon: {e}")
+
         # --- Download queue ---
         self._queue = DownloadQueue(
             max_workers=int(settings.get("max_simultaneous", 2)),
