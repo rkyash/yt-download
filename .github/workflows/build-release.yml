@@ -20,18 +20,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync
 
       - name: Download FFmpeg for Windows
         run: |
@@ -41,15 +41,14 @@ jobs:
           Copy-Item $ffmpegExe.FullName -Destination "ffmpeg.exe"
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --noconsole --name YTDownloader --icon app_icon.ico --add-binary "ffmpeg.exe;." main.py
+        run: uv run pyinstaller YTDownloader.spec
 
       - name: Rename artifact
         run: |
           Rename-Item -Path "dist\YTDownloader.exe" -NewName "YTDownloader-windows-x64.exe"
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: YTDownloader-windows-x64
           path: dist/YTDownloader-windows-x64.exe
@@ -60,10 +59,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -85,11 +84,11 @@ jobs:
             libxtst-dev \
             libfreetype6-dev
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync
 
       - name: Download FFmpeg for Linux
         run: |
@@ -100,8 +99,7 @@ jobs:
           chmod +x ./ffmpeg
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --noconsole --name YTDownloader --add-binary "ffmpeg:." main.py
+        run: uv run pyinstaller YTDownloader.spec
 
       - name: Prepare Linux binary
         run: |
@@ -109,7 +107,7 @@ jobs:
           mv dist/YTDownloader dist/YTDownloader-linux-x64
 
       - name: Upload Linux binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: YTDownloader-linux-x64
           path: dist/YTDownloader-linux-x64
@@ -161,7 +159,7 @@ jobs:
           dpkg-deb --build deb-package YTDownloader-linux-x64.deb
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: YTDownloader-linux-x64-deb
           path: YTDownloader-linux-x64.deb
@@ -175,7 +173,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           merge-multiple: true
 

@@ -1,10 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+
+is_windows = sys.platform == 'win32'
+ffmpeg_binary = 'ffmpeg.exe' if is_windows else 'ffmpeg'
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[('ffmpeg.exe', '.')],
+    binaries=[(ffmpeg_binary, '.')],
     datas=[],
     hiddenimports=[],
     hookspath=[],
@@ -27,7 +31,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    upx_exclude=['ffmpeg.exe'],
+    upx_exclude=[ffmpeg_binary],
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
@@ -35,5 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='app_icon.ico',
+    icon='app_icon.ico' if is_windows else None,
 )
