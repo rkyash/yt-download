@@ -44,7 +44,7 @@ from downloader import (
     VideoInfo,
     fetch_video_info,
 )
-from settings import settings, load_history
+from settings import settings, load_history, save_history
 from utils import (
     format_duration,
     format_eta,
@@ -134,6 +134,7 @@ class SidebarButton(ctk.CTkButton):
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color="transparent",
             hover_color=("gray75", "gray25"),
+            text_color=("black", "white"),
             **kwargs,
         )
 
@@ -338,7 +339,7 @@ class App(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # Sidebar
-        self._sidebar = ctk.CTkFrame(self, width=SIDEBAR_WIDTH, corner_radius=0)
+        self._sidebar = ctk.CTkFrame(self, width=SIDEBAR_WIDTH, corner_radius=0, fg_color=("white", "gray17"))
         self._sidebar.grid(row=0, column=0, sticky="nsew")
         self._sidebar.grid_propagate(False)
 
@@ -372,11 +373,12 @@ class App(ctk.CTk):
         ctk.CTkLabel(
             logo_frame, text="▶ YT-DL",
             font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=("black", "white"),
         ).pack(anchor="w")
         ctk.CTkLabel(
             logo_frame, text=f"v{APP_VERSION}",
             font=ctk.CTkFont(size=11),
-            text_color=("gray55", "gray55"),
+            text_color=("gray30", "gray55"),
         ).pack(anchor="w")
 
         ctk.CTkFrame(sb, height=1, fg_color=("gray80", "gray30")).grid(
@@ -404,7 +406,7 @@ class App(ctk.CTk):
             row=7, column=0, sticky="ew", padx=12, pady=4
         )
         ctk.CTkLabel(sb, text="Appearance", font=ctk.CTkFont(size=11),
-                     text_color=("gray55", "gray55")).grid(
+                     text_color=("gray30", "gray55")).grid(
             row=8, column=0, sticky="w", padx=16)
         self._theme_menu = ctk.CTkOptionMenu(
             sb,
@@ -774,10 +776,21 @@ class App(ctk.CTk):
         header.grid(row=0, column=0, sticky="ew", padx=20, pady=(28, 4))
         header.grid_columnconfigure(0, weight=1)
         SectionTitle(header, text="Download History").grid(row=0, column=0, sticky="w")
+        
+        btn_row = ctk.CTkFrame(header, fg_color="transparent")
+        btn_row.grid(row=0, column=1, sticky="e")
+
         ctk.CTkButton(
-            header, text="🔄 Refresh", corner_radius=10, height=36,
+            btn_row, text="🗑 Clear All", corner_radius=10, height=36,
+            command=self._clear_all_history,
+            fg_color=("#C0392B", "#922B21"),
+            hover_color=("#A93226", "#7B241C"),
+        ).pack(side="left", padx=4)
+
+        ctk.CTkButton(
+            btn_row, text="🔄 Refresh", corner_radius=10, height=36,
             command=self._refresh_history,
-        ).grid(row=0, column=1, sticky="e")
+        ).pack(side="left", padx=4)
 
         self._history_scroll = ctk.CTkScrollableFrame(page, fg_color="transparent")
         self._history_scroll.grid(row=1, column=0, sticky="nsew", padx=12, pady=8)
@@ -843,6 +856,25 @@ class App(ctk.CTk):
             btn_frame, text="📂 Folder", width=100, height=32, corner_radius=8,
             command=lambda f=output_folder: open_in_file_manager(f),
         ).pack(pady=2)
+
+        ctk.CTkButton(
+            btn_frame, text="🗑 Remove", width=100, height=32, corner_radius=8,
+            fg_color=("#C0392B", "#922B21"),
+            hover_color=("#A93226", "#7B241C"),
+            command=lambda e=entry: self._remove_history_item(e),
+        ).pack(pady=2)
+
+    def _clear_all_history(self) -> None:
+        if messagebox.askyesno("Clear History", "Are you sure you want to clear all download history?"):
+            save_history([])
+            self._refresh_history()
+
+    def _remove_history_item(self, entry_to_remove: dict) -> None:
+        entries = load_history()
+        if entry_to_remove in entries:
+            entries.remove(entry_to_remove)
+            save_history(entries)
+            self._refresh_history()
 
     # ==================================================================
     # SETTINGS PAGE

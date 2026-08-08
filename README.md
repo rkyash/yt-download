@@ -9,25 +9,25 @@ A modern, feature-rich YouTube video/audio downloader with a sleek CustomTkinter
 
 ## ✨ Features
 
-| Feature | Details |
-|---|---|
-| **Video + Audio / Video Only / Audio Only** | Selectable per download |
-| **Quality selector** | Best, 1080p, 720p, 480p, 360p, 240p |
-| **Playlist support** | Confirmation prompt, queues all entries |
-| **Download queue** | Multiple simultaneous downloads |
-| **Real-time progress** | Progress bar, speed, ETA, status |
-| **Thumbnail preview** | Shown on info fetch and in queue rows |
-| **Pause / Resume / Cancel** | Per-task controls |
-| **Retry failed downloads** | Automatic up to 3 retries |
-| **Download history** | Persistent, viewable in the History tab |
-| **Dark / Light / System theme** | Toggle in sidebar or Settings |
-| **Clipboard paste** | One-click URL paste |
-| **Custom filename template** | `%(title)s`, `%(uploader)s`, `%(id)s`, etc. |
-| **Cookie support** | For age-restricted videos |
-| **Open file / folder** | Buttons in history and queue rows |
-| **Settings persistence** | JSON file in `~/.yt_downloader/` |
-| **Filename sanitization** | Safe names on all platforms |
-| **Duplicate prevention** | Checks existing files before downloading |
+| Feature                                     | Details                                     |
+| ------------------------------------------- | ------------------------------------------- |
+| **Video + Audio / Video Only / Audio Only** | Selectable per download                     |
+| **Quality selector**                        | Best, 1080p, 720p, 480p, 360p, 240p         |
+| **Playlist support**                        | Confirmation prompt, queues all entries     |
+| **Download queue**                          | Multiple simultaneous downloads             |
+| **Real-time progress**                      | Progress bar, speed, ETA, status            |
+| **Thumbnail preview**                       | Shown on info fetch and in queue rows       |
+| **Pause / Resume / Cancel**                 | Per-task controls                           |
+| **Retry failed downloads**                  | Automatic up to 3 retries                   |
+| **Download history**                        | Persistent, viewable in the History tab     |
+| **Dark / Light / System theme**             | Toggle in sidebar or Settings               |
+| **Clipboard paste**                         | One-click URL paste                         |
+| **Custom filename template**                | `%(title)s`, `%(uploader)s`, `%(id)s`, etc. |
+| **Cookie support**                          | For age-restricted videos                   |
+| **Open file / folder**                      | Buttons in history and queue rows           |
+| **Settings persistence**                    | JSON file in `~/.yt_downloader/`            |
+| **Filename sanitization**                   | Safe names on all platforms                 |
+| **Duplicate prevention**                    | Checks existing files before downloading    |
 
 ---
 
@@ -62,6 +62,7 @@ You can set up the project using either `pip` or `uv` (recommended for faster de
 #### Option A: Using `pip`
 
 Create and activate a virtual environment:
+
 ```bash
 python -m venv .venv
 # Windows
@@ -71,6 +72,7 @@ source .venv/bin/activate
 ```
 
 Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -78,16 +80,19 @@ pip install -r requirements.txt
 #### Option B: Using `uv`
 
 If you have [uv](https://docs.astral.sh/uv/) installed, you can simply sync the dependencies:
+
 ```bash
 uv sync
 ```
-*This automatically creates a `.venv` virtual environment and installs all required packages from `pyproject.toml`.*
+
+_This automatically creates a `.venv` virtual environment and installs all required packages from `pyproject.toml`._
 
 ### 3. Install FFmpeg
 
 FFmpeg is required for merging video+audio streams and audio extraction.
 
 #### Windows
+
 1. Download a build from <https://github.com/BtbN/FFmpeg-Builds/releases>
    (choose `ffmpeg-master-latest-win64-gpl.zip`).
 2. Extract and copy `ffmpeg.exe`, `ffprobe.exe`, `ffplay.exe` into a folder.
@@ -95,11 +100,13 @@ FFmpeg is required for merging video+audio streams and audio extraction.
 4. Verify: `ffmpeg -version`
 
 #### macOS
+
 ```bash
 brew install ffmpeg
 ```
 
 #### Linux (Ubuntu/Debian)
+
 ```bash
 sudo apt update && sudo apt install ffmpeg -y
 ```
@@ -109,11 +116,13 @@ sudo apt update && sudo apt install ffmpeg -y
 ## ▶ Running the Application
 
 If you used **pip** (make sure your virtual environment is activated):
+
 ```bash
 python main.py
 ```
 
 If you used **uv**:
+
 ```bash
 uv run main.py
 ```
@@ -130,6 +139,8 @@ pyinstaller --onefile --windowed --name "YTDownloader" main.py
 The standalone `.exe` will be in the `dist/` folder.
 
 > **Tip:** Include FFmpeg binaries alongside the `.exe` or bundle them with `--add-binary`.
+
+uv add pyinstaller && uv run pyinstaller --onefile --windowed --name "YTDownloader" main.py
 
 ---
 
