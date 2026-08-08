@@ -118,8 +118,12 @@ def fetch_video_info(url: str, cookies_file: str = "") -> VideoInfo:
         "skip_download": True,
         "noplaylist": False,   # allow playlist detection
     }
-    if cookies_file and os.path.isfile(cookies_file):
-        ydl_opts["cookiefile"] = cookies_file
+    if cookies_file:
+        if os.path.isfile(cookies_file):
+            ydl_opts["cookiefile"] = cookies_file
+        else:
+            # Assume it's a browser name like "edge", "chrome", "firefox", etc.
+            ydl_opts["cookiesfrombrowser"] = (cookies_file, )
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         raw = ydl.extract_info(url, download=False)
@@ -402,8 +406,11 @@ class Downloader:
                 logger.warning("download_range_func not available: %s", exc)
 
         # Cookies
-        if self.task.cookies_file and os.path.isfile(self.task.cookies_file):
-            opts["cookiefile"] = self.task.cookies_file
+        if self.task.cookies_file:
+            if os.path.isfile(self.task.cookies_file):
+                opts["cookiefile"] = self.task.cookies_file
+            else:
+                opts["cookiesfrombrowser"] = (self.task.cookies_file, )
 
         return opts
 

@@ -290,6 +290,205 @@ class QueueRow(ctk.CTkFrame):
 
 
 # ---------------------------------------------------------------------------
+# Cookie Setup Helper
+# ---------------------------------------------------------------------------
+
+def _try_browser_cookies(browser: str) -> bool:
+    """Test if we can extract cookies from the given browser. Returns True on success."""
+    import yt_dlp
+    try:
+        opts = {
+            "quiet": True, "no_warnings": True, "skip_download": True,
+            "cookiesfrombrowser": (browser,),
+            "extract_flat": True,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info("https://www.youtube.com/watch?v=jNQXAC9IVRw", download=False)
+        return True
+    except Exception:
+        return False
+
+
+class CookieSetupDialog(ctk.CTkToplevel):
+    """Step-by-step dialog to guide the user through cookie setup."""
+
+    def __init__(self, master, on_save=None):
+        super().__init__(master)
+        self.title("Authentication Setup — Fix YouTube Bot Error")
+        self.geometry("620x640")
+        self.resizable(False, False)
+        self.grab_set()  # modal
+        self._on_save = on_save
+
+        self.grid_columnconfigure(0, weight=1)
+
+        # Header
+        header = ctk.CTkFrame(self, fg_color=("#1a1a2e", "#1a1a2e"), corner_radius=0)
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            header, text="🔐  YouTube Authentication Required",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="white",
+        ).grid(row=0, column=0, padx=24, pady=(18, 4), sticky="w")
+        ctk.CTkLabel(
+            header,
+            text="YouTube now requires sign-in for many videos. Choose one of these methods:",
+            font=ctk.CTkFont(size=12),
+            text_color=("#aaaacc", "#aaaacc"),
+            wraplength=560,
+            justify="left",
+        ).grid(row=1, column=0, padx=24, pady=(0, 16), sticky="w")
+
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+        scroll.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # ── Method 1: Auto detect ──
+        m1 = Card(scroll)
+        m1.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
+        m1.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(m1, text="⚡  Method 1 — Auto-Detect Browser (Easiest)",
+                     font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 4))
+        ctk.CTkLabel(
+            m1,
+            text="Click the button below. The app will automatically try to read cookies\n"
+                 "from your installed browsers (Edge, Chrome, Firefox, Brave).",
+            font=ctk.CTkFont(size=12), text_color=("gray40", "gray70"),
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 10))
+        self._auto_status = ctk.CTkLabel(
+            m1, text="", font=ctk.CTkFont(size=12),
+            text_color=("gray40", "gray60"),
+        )
+        self._auto_status.grid(row=2, column=0, sticky="w", padx=16, pady=(0, 4))
+        ctk.CTkButton(
+            m1, text="🔍  Try Auto-Detect Now", corner_radius=10,
+            command=self._run_auto_detect,
+        ).grid(row=3, column=0, columnspan=2, padx=16, pady=(0, 14), sticky="ew")
+
+        # ── Method 2: Export cookies.txt ──
+        m2 = Card(scroll)
+        m2.grid(row=1, column=0, sticky="ew", padx=16, pady=8)
+        m2.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(m2, text="📄  Method 2 — Export cookies.txt (Most Reliable)",
+                     font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 4))
+
+        steps = [
+            ("1", "Install browser extension:",
+             "Chrome/Edge: \"Get cookies.txt LOCALLY\"\nFirefox: \"cookies.txt\" by lennonhill"),
+            ("2", "Log in to YouTube in your browser", ""),
+            ("3", "Go to youtube.com, click the extension icon",
+             "Make sure format is set to  Netscape"),
+            ("4", "Click Export → save as  cookies.txt",
+             "Save anywhere, e.g. C:\\Users\\you\\cookies.txt"),
+            ("5", "Browse to the file below and click Save", ""),
+        ]
+        for i, (num, title, sub) in enumerate(steps):
+            step_f = ctk.CTkFrame(m2, fg_color=("#f0f0f0", "#2a2a3a"), corner_radius=8)
+            step_f.grid(row=i + 1, column=0, columnspan=2, sticky="ew",
+                        padx=16, pady=3)
+            step_f.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(
+                step_f, text=num,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                width=28, height=28,
+                fg_color=("#3498db", "#2980b9"),
+                text_color="white",
+                corner_radius=14,
+            ).grid(row=0, column=0, rowspan=2, padx=(10, 8), pady=8, sticky="ns")
+            ctk.CTkLabel(
+                step_f, text=title,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                anchor="w",
+            ).grid(row=0, column=1, sticky="w", padx=(0, 10), pady=(6, 0))
+            if sub:
+                ctk.CTkLabel(
+                    step_f, text=sub,
+                    font=ctk.CTkFont(size=11),
+                    text_color=("gray40", "gray70"),
+                    anchor="w", justify="left",
+                ).grid(row=1, column=1, sticky="w", padx=(0, 10), pady=(0, 6))
+
+        # File picker
+        picker_f = ctk.CTkFrame(m2, fg_color="transparent")
+        picker_f.grid(row=len(steps) + 1, column=0, columnspan=2,
+                      sticky="ew", padx=16, pady=(6, 14))
+        picker_f.grid_columnconfigure(0, weight=1)
+        self._file_var = tk.StringVar(value=settings.get("cookies_file", ""))
+        ctk.CTkEntry(
+            picker_f, textvariable=self._file_var, corner_radius=10,
+            placeholder_text="Path to cookies.txt …",
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkButton(
+            picker_f, text="📂 Browse", width=100, corner_radius=10,
+            command=self._browse,
+        ).grid(row=0, column=1)
+
+        # Footer buttons
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.grid(row=2, column=0, sticky="ew", padx=16, pady=12)
+        footer.grid_columnconfigure(0, weight=1)
+        ctk.CTkButton(
+            footer, text="💾  Save & Close", height=44,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            corner_radius=12,
+            command=self._save,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            footer, text="Skip", height=44, width=80,
+            corner_radius=12,
+            fg_color=("gray75", "gray30"),
+            hover_color=("gray65", "gray25"),
+            command=self.destroy,
+        ).grid(row=0, column=1)
+
+    def _run_auto_detect(self):
+        self._auto_status.configure(text="🔄  Scanning browsers…", text_color=("#E67E22", "#E67E22"))
+        self.update()
+        threading.Thread(target=self._do_auto_detect, daemon=True).start()
+
+    def _do_auto_detect(self):
+        browsers = ["edge", "chrome", "firefox", "brave", "opera", "chromium"]
+        for browser in browsers:
+            self._auto_status.configure(
+                text=f"🔄  Trying {browser}…", text_color=("#E67E22", "#E67E22")
+            )
+            if _try_browser_cookies(browser):
+                self._file_var.set(browser)
+                self._auto_status.configure(
+                    text=f"✅  Success! Using cookies from {browser}.",
+                    text_color=("#27AE60", "#2ECC71"),
+                )
+                return
+        self._auto_status.configure(
+            text="❌  Auto-detect failed. Browser encryption may be blocking access.\n"
+                 "    Please use Method 2 (cookies.txt) below.",
+            text_color=("#E74C3C", "#E74C3C"),
+        )
+
+    def _browse(self):
+        path = filedialog.askopenfilename(
+            title="Select cookies.txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+        )
+        if path:
+            self._file_var.set(path)
+
+    def _save(self):
+        val = self._file_var.get().strip()
+        if val:
+            settings.set("cookies_file", val)
+            settings.save()
+        if self._on_save:
+            self._on_save(val)
+        self.destroy()
+
+
+# ---------------------------------------------------------------------------
 # Main Application Window
 # ---------------------------------------------------------------------------
 
@@ -345,6 +544,9 @@ class App(ctk.CTk):
 
         # --- Periodic UI refresh ---
         self.after(400, self._poll_updates)
+
+        # --- Auto-detect cookies on startup (if none saved) ---
+        self.after(1500, self._startup_cookie_check)
 
     # ==================================================================
     # Layout construction
@@ -583,13 +785,13 @@ class App(ctk.CTk):
             self._options_card, textvariable=self._template_var, corner_radius=10,
         ).grid(row=3, column=0, columnspan=2, sticky="ew", padx=(16, 4), pady=(0, 14))
 
-        ctk.CTkLabel(self._options_card, text="Cookies File (optional)",
+        ctk.CTkLabel(self._options_card, text="Cookies (Browser name or .txt file)",
                      font=ctk.CTkFont(size=12)).grid(
             row=2, column=2, columnspan=2, sticky="w", padx=16, pady=(0, 2))
         self._cookies_var = tk.StringVar(value=settings.get("cookies_file", ""))
         ctk.CTkEntry(
             self._options_card, textvariable=self._cookies_var,
-            placeholder_text="Path to cookies.txt …", corner_radius=10,
+            placeholder_text="e.g. edge, chrome, or path to cookies.txt", corner_radius=10,
         ).grid(row=3, column=2, sticky="ew", padx=(16, 4), pady=(0, 14))
 
         ctk.CTkButton(
@@ -956,9 +1158,50 @@ class App(ctk.CTk):
                           variable=self._s_workers_var, corner_radius=10).grid(
             row=5, column=1, sticky="ew", padx=16, pady=(0, 14))
 
+        # ---------- Cookies / Authentication card ----------
+        auth_card = Card(page)
+        auth_card.grid(row=2, column=0, sticky="ew", padx=20, pady=8)
+        auth_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(auth_card, text="Authentication (Cookies)",
+                     font=ctk.CTkFont(size=16, weight="bold")).grid(
+            row=0, column=0, columnspan=3, sticky="w", padx=16, pady=(14, 4))
+
+        ctk.CTkLabel(
+            auth_card,
+            text="Required if YouTube asks you to sign in. Enter your browser name OR path to a cookies.txt file.",
+            font=ctk.CTkFont(size=12),
+            text_color=("gray40", "gray70"),
+            wraplength=600,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 8))
+
+        ctk.CTkLabel(auth_card, text="Browser Name or Cookies File",
+                     font=ctk.CTkFont(size=12)).grid(
+            row=2, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 2))
+
+        self._s_cookies_var = tk.StringVar(value=settings.get("cookies_file", ""))
+        ctk.CTkEntry(
+            auth_card, textvariable=self._s_cookies_var, corner_radius=10,
+            placeholder_text="e.g.  edge  ·  chrome  ·  firefox  ·  or path to cookies.txt",
+        ).grid(row=3, column=0, sticky="ew", padx=(16, 4), pady=(0, 6))
+        ctk.CTkButton(
+            auth_card, text="📂", width=40, corner_radius=10,
+            command=self._choose_cookies_setting,
+        ).grid(row=3, column=1, padx=(0, 16), pady=(0, 6), sticky="w")
+
+        # Helper hint
+        browsers = ["edge", "chrome", "firefox", "brave", "opera", "safari"]
+        ctk.CTkLabel(
+            auth_card,
+            text="Supported browser names: " + "  ·  ".join(browsers),
+            font=ctk.CTkFont(size=11),
+            text_color=("gray50", "gray60"),
+        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 14))
+
         # ---------- Appearance card ----------
         app_card = Card(page)
-        app_card.grid(row=2, column=0, sticky="ew", padx=20, pady=8)
+        app_card.grid(row=3, column=0, sticky="ew", padx=20, pady=8)
         app_card.grid_columnconfigure((0, 1), weight=1)
 
         ctk.CTkLabel(app_card, text="Appearance",
@@ -986,7 +1229,7 @@ class App(ctk.CTk):
             height=48, corner_radius=12,
             font=ctk.CTkFont(size=14, weight="bold"),
             command=self._save_settings,
-        ).grid(row=3, column=0, sticky="ew", padx=20, pady=(8, 24))
+        ).grid(row=4, column=0, sticky="ew", padx=20, pady=(8, 24))
 
     # ==================================================================
     # ABOUT PAGE
@@ -1121,12 +1364,14 @@ class App(ctk.CTk):
         self._fetching = False
         self._fetch_btn.configure(state="normal", text="🔍 Fetch Info")
         self._set_status(f"❌ Error: {msg}", error=True)
-        # Also show a clear popup so the user can't miss it
+        # Check if it's a bot/sign-in error → show cookie setup dialog
+        r = msg.lower()
+        if "sign in" in r or "not a bot" in r or "could not copy" in r or "dpapi" in r:
+            self.after(100, self._show_cookie_setup)
+            return
+        # Otherwise show generic popup
         friendly = self._friendly_error(msg)
-        messagebox.showerror(
-            "Could Not Fetch Video Info",
-            friendly,
-        )
+        messagebox.showerror("Could Not Fetch Video Info", friendly)
 
     @staticmethod
     def _friendly_error(raw: str) -> str:
@@ -1140,10 +1385,22 @@ class App(ctk.CTk):
             )
         if "video unavailable" in r or "private video" in r:
             return "This video is unavailable or private. Please check the URL and try again."
-        if "sign in" in r or "age" in r or "login" in r:
+        if "could not copy" in r and ("cookie" in r or "database" in r):
             return (
-                "This video requires sign-in or is age-restricted.\n\n"
-                "Fix: Go to Settings and provide a cookies file from your browser."
+                "Could not read your browser's cookie database.\n\n"
+                "This usually happens because your browser is currently open and locking the file.\n\n"
+                "Fix options:\n"
+                "  1. Close Chrome completely and retry\n"
+                "  2. Use a different browser — try 'edge' or 'firefox' in Settings → Authentication\n"
+                "  3. Export a cookies.txt file using a browser extension"
+            )
+        if "sign in" in r or "not a bot" in r or "age" in r or "login" in r:
+            return (
+                "YouTube requires sign-in for this video (bot protection).\n\n"
+                "Fix: Go to ⚙ Settings → Authentication (Cookies) and enter:\n"
+                "  • Your browser name: edge, chrome, firefox, brave\n"
+                "  • (Chrome must be fully closed when using 'chrome')\n"
+                "  • OR browse to a cookies.txt file exported from your browser"
             )
         if "copyright" in r or "blocked" in r:
             return "This video is blocked or restricted in your region."
@@ -1361,7 +1618,19 @@ class App(ctk.CTk):
         if folder:
             var.set(folder)
 
+    def _choose_cookies_setting(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select cookies.txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+        )
+        if path:
+            self._s_cookies_var.set(path)
+            # Keep the home-page cookies entry in sync too
+            if hasattr(self, "_cookies_var"):
+                self._cookies_var.set(path)
+
     def _save_settings(self) -> None:
+        cookies_val = self._s_cookies_var.get().strip()
         settings.update(
             {
                 "download_folder": self._s_folder_var.get(),
@@ -1371,11 +1640,47 @@ class App(ctk.CTk):
                 "max_simultaneous": int(self._s_workers_var.get()),
                 "theme": self._s_theme_var.get(),
                 "color_theme": self._s_color_var.get(),
+                "cookies_file": cookies_val,
             }
         )
         settings.save()
+        # Keep home-page cookies field in sync
+        if hasattr(self, "_cookies_var"):
+            self._cookies_var.set(cookies_val)
         self._queue.update_max_workers(int(self._s_workers_var.get()))
         messagebox.showinfo("Settings", "Settings saved successfully.")
+
+    def _startup_cookie_check(self) -> None:
+        """On startup: if no cookies saved yet, silently try auto-detect in background."""
+        if settings.get("cookies_file", ""):
+            return  # Already configured, skip
+        threading.Thread(target=self._bg_startup_cookie_check, daemon=True).start()
+
+    def _bg_startup_cookie_check(self) -> None:
+        browsers = ["edge", "chrome", "firefox", "brave", "opera", "chromium"]
+        for browser in browsers:
+            if _try_browser_cookies(browser):
+                logger.info("Auto-detected browser cookies: %s", browser)
+                settings.set("cookies_file", browser)
+                settings.save()
+                # Sync all cookie fields in UI
+                self.after(0, lambda b=browser: self._sync_cookie_fields(b))
+                return
+        logger.info("No browser cookies could be auto-detected on startup.")
+
+    def _sync_cookie_fields(self, value: str) -> None:
+        """Sync the cookie value to all UI fields."""
+        if hasattr(self, "_cookies_var"):
+            self._cookies_var.set(value)
+        if hasattr(self, "_s_cookies_var"):
+            self._s_cookies_var.set(value)
+
+    def _show_cookie_setup(self) -> None:
+        """Open the step-by-step cookie setup dialog."""
+        def on_save(val: str):
+            self._sync_cookie_fields(val)
+        CookieSetupDialog(self, on_save=on_save)
+
 
     def _on_theme_change(self, value: str) -> None:
         ctk.set_appearance_mode(value)
