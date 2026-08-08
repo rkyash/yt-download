@@ -131,16 +131,30 @@ uv run main.py
 
 ## 📦 Packaging as a Windows Executable (PyInstaller)
 
+You can build a **single `.exe` file** that bundles everything, including FFmpeg! This means users can run your app without needing to install FFmpeg or Python themselves.
+
+### 1. Download FFmpeg
+Download `ffmpeg.exe` and place it in the project root folder (next to `main.py`).
+
+### 2. Configure the Spec File
+Make sure `YTDownloader.spec` includes `ffmpeg.exe` in the `binaries` list:
+```python
+binaries=[('ffmpeg.exe', '.')],
+```
+*(The code is already set up in `utils.py` to automatically locate this bundled FFmpeg binary using `sys._MEIPASS` at runtime).*
+
+### 3. Build the Executable
+Run PyInstaller using the configured `.spec` file:
+
 ```bash
-pip install pyinstaller
-pyinstaller --onefile --windowed --name "YTDownloader" main.py
+# If using pip
+pyinstaller YTDownloader.spec
+
+# If using uv
+uv run pyinstaller YTDownloader.spec
 ```
 
-The standalone `.exe` will be in the `dist/` folder.
-
-> **Tip:** Include FFmpeg binaries alongside the `.exe` or bundle them with `--add-binary`.
-
-uv add pyinstaller && uv run pyinstaller --onefile --windowed --name "YTDownloader" main.py
+The standalone, fully-bundled `.exe` will be generated in the `dist/` folder!
 
 ---
 

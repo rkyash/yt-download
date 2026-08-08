@@ -8,11 +8,26 @@ and other shared utilities used across modules.
 
 import re
 import os
+import sys
 import logging
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# FFmpeg Helpers
+# ---------------------------------------------------------------------------
+
+def get_ffmpeg_path() -> str:
+    """Finds the bundled ffmpeg.exe when running as a PyInstaller executable."""
+    if getattr(sys, 'frozen', False):
+        # The app is running as a bundled PyInstaller .exe
+        return os.path.join(sys._MEIPASS, 'ffmpeg.exe')
+    else:
+        # The app is running as a normal Python script
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg.exe')
 
 
 # ---------------------------------------------------------------------------

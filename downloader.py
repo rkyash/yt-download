@@ -30,6 +30,7 @@ from utils import (
     format_duration,
     file_already_exists,
     ensure_dir,
+    get_ffmpeg_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -355,6 +356,7 @@ class Downloader:
             "merge_output_format": "mp4",
             "writethumbnail": False,
             "retries": self.task.max_retries,
+            "ffmpeg_location": get_ffmpeg_path(),
         }
 
         if self.task.download_type == "Audio Only":
