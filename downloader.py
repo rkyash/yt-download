@@ -450,6 +450,11 @@ class Downloader:
             if self._cancel_event.is_set():
                 task.status = DownloadStatus.CANCELLED
             else:
+                err_msg = str(exc).lower()
+                # If the cookie DB is locked, try other browsers before giving up
+                if "could not copy" in err_msg or ("cookie" in err_msg and "database" in err_msg):
+                    if self._retry_with_fallback_browser():
+                        return  # fallback succeeded
                 task.status = DownloadStatus.ERROR
                 task.error_message = str(exc)
                 logger.error("Download failed: %s", exc)
@@ -459,6 +464,60 @@ class Downloader:
             logger.exception("Unexpected download error: %s", exc)
 
         self._notify()
+
+    def _retry_with_fallback_browser(self) -> bool:
+        """Try alternative browsers when the configured one has a locked cookie DB.
+
+        Returns True if the download succeeded with a fallback browser.
+        """
+        from settings import settings as _settings
+
+        all_browsers = ["edge", "firefox", "brave", "chrome", "opera", "chromium"]
+        failed = (self.task.cookies_file or "").strip().lower()
+        candidates = [b for b in all_browsers if b != failed]
+
+        for browser in candidates:
+            try:
+                logger.info("Download: trying fallback browser cookies: %s", browser)
+                self.task.cookies_file = browser
+                self.task.status = DownloadStatus.DOWNLOADING
+                self.task.progress = 0.0
+                self._notify()
+
+                opts = self._build_ydl_opts()
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([self.task.url])
+
+                if self._cancel_event.is_set():
+                    self.task.status = DownloadStatus.CANCELLED
+                else:
+                    self.task.status = DownloadStatus.COMPLETED
+                    self.task.progress = 100.0
+                    logger.info("Fallback download succeeded with %s", browser)
+                    _settings.set("cookies_file", browser)
+                    _settings.save()
+                    append_history(
+                        {
+                            "title": self.task.title,
+                            "url": self.task.url,
+                            "output_file": self.task.output_file,
+                            "output_folder": self.task.output_folder,
+                            "download_type": self.task.download_type,
+                            "quality": self.task.quality,
+                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "thumbnail_url": self.task.thumbnail_url,
+                            "uploader": self.task.uploader,
+                            "duration": self.task.duration,
+                        }
+                    )
+                self._notify()
+                return True
+            except Exception:
+                continue
+
+        # Restore original cookie setting
+        self.task.cookies_file = failed
+        return False
 
 
 # ---------------------------------------------------------------------------

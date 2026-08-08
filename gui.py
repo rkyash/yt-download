@@ -1311,8 +1311,40 @@ class App(ctk.CTk):
             info = fetch_video_info(url, cookies_file=cookies)
             self.after(0, self._on_info_fetched, info)
         except Exception as exc:
+            err_msg = str(exc).lower()
+            # If the error is a locked cookie database, try other browsers
+            if "could not copy" in err_msg or ("cookie" in err_msg and "database" in err_msg):
+                logger.warning(
+                    "Browser cookie access failed (%s), trying fallback browsers…",
+                    exc,
+                )
+                fallback = self._try_fallback_browsers(url, cookies)
+                if fallback is not None:
+                    self.after(0, self._on_info_fetched, fallback)
+                    return
             logger.error("Info fetch error: %s", exc)
             self.after(0, self._on_info_error, str(exc))
+
+    def _try_fallback_browsers(self, url: str, failed_browser: str) -> Optional[VideoInfo]:
+        """Try alternative browsers when the configured one has a locked cookie DB."""
+        # All browsers to try, excluding the one that already failed
+        all_browsers = ["edge", "firefox", "brave", "chrome", "opera", "chromium"]
+        failed = failed_browser.strip().lower()
+        candidates = [b for b in all_browsers if b != failed]
+
+        for browser in candidates:
+            try:
+                logger.info("Trying fallback browser cookies: %s", browser)
+                info = fetch_video_info(url, cookies_file=browser)
+                # Success — save this browser as the new default
+                logger.info("Fallback succeeded with %s, saving as default", browser)
+                settings.set("cookies_file", browser)
+                settings.save()
+                self.after(0, lambda b=browser: self._sync_cookie_fields(b))
+                return info
+            except Exception:
+                continue
+        return None
 
     def _on_info_fetched(self, info: VideoInfo) -> None:
         self._fetching = False
@@ -1657,7 +1689,9 @@ class App(ctk.CTk):
         threading.Thread(target=self._bg_startup_cookie_check, daemon=True).start()
 
     def _bg_startup_cookie_check(self) -> None:
-        browsers = ["edge", "chrome", "firefox", "brave", "opera", "chromium"]
+        # Prefer Firefox first — it doesn't lock its cookie DB while open.
+        # Then Edge (usually available on Windows), then Chrome, etc.
+        browsers = ["firefox", "edge", "chrome", "brave", "opera", "chromium"]
         for browser in browsers:
             if _try_browser_cookies(browser):
                 logger.info("Auto-detected browser cookies: %s", browser)
