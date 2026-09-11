@@ -1345,6 +1345,18 @@ class App(ctk.CTk):
                 return info
             except Exception:
                 continue
+
+        # Last resort: try without any cookies at all.
+        # Metadata extraction usually works without authentication;
+        # cookies are only needed for age-restricted or private videos.
+        try:
+            logger.info("All browser cookies failed — trying without cookies")
+            info = fetch_video_info(url, cookies_file="")
+            logger.info("Succeeded without cookies")
+            return info
+        except Exception:
+            pass
+
         return None
 
     def _on_info_fetched(self, info: VideoInfo) -> None:

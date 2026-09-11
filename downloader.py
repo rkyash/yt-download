@@ -200,13 +200,13 @@ def _build_format_string(download_type: str, quality: str) -> str:
     """
     Return a yt-dlp format selector string based on download type and quality.
 
-    Strategy for Video+Audio:
-      1. H.264 (avc1) video  +  AAC/M4A audio  → universally compatible MP4
-      2. H.264 video  +  any audio             → still good compatibility
-      3. Any video  +  any audio               → last resort (may need recoding)
-
-    This ensures the output plays on VLC, Windows Media Player, QuickTime,
-    mobile devices, etc. without needing extra codecs.
+    Strategy: always pick the highest-quality (highest bitrate) stream at the
+    requested resolution, regardless of codec.  On YouTube, VP9 and AV1
+    streams have significantly higher bitrates than H.264 at the same
+    resolution, so preferring H.264 for "compatibility" actually produced
+    noticeably lower visual quality.  The merge_output_format='mp4' option
+    ensures the output is always an MP4 container, and modern players
+    (VLC, Windows Media Player, mobile devices) handle VP9/AV1 just fine.
     """
     quality_map = {
         "best": "",
@@ -223,34 +223,16 @@ def _build_format_string(download_type: str, quality: str) -> str:
         return "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio/best"
 
     if download_type == "Video Only":
-        # H.264 preferred, then anything
         if hf:
-            return (
-                f"bestvideo[vcodec^=avc1]{hf}/"
-                f"bestvideo[vcodec^=h264]{hf}/"
-                f"bestvideo{hf}/bestvideo"
-            )
-        return "bestvideo[vcodec^=avc1]/bestvideo[vcodec^=h264]/bestvideo/best"
+            return f"bestvideo{hf}/bestvideo"
+        return "bestvideo/best"
 
     # ── Video + Audio ────────────────────────────────────────────────────────
-    # Priority:
-    #   1. H.264 video + AAC audio  (best compatibility)
-    #   2. H.264 video + any audio  (recoder will fix audio if needed)
-    #   3. any video   + any audio  (recoder will fix everything if needed)
+    # Simply pick the best video + best audio at the requested resolution.
+    # yt-dlp will choose the highest-bitrate stream (typically VP9 or AV1).
     if hf:
-        return (
-            f"bestvideo[vcodec^=avc1]{hf}+bestaudio[acodec^=mp4a]/"
-            f"bestvideo[vcodec^=avc1]{hf}+bestaudio/"
-            f"bestvideo[vcodec^=h264]{hf}+bestaudio/"
-            f"bestvideo{hf}+bestaudio/"
-            f"best{hf}/best"
-        )
-    return (
-        "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/"
-        "bestvideo[vcodec^=avc1]+bestaudio/"
-        "bestvideo[vcodec^=h264]+bestaudio/"
-        "bestvideo+bestaudio/best"
-    )
+        return f"bestvideo{hf}+bestaudio/best{hf}/best"
+    return "bestvideo+bestaudio/best"
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +321,10 @@ class Downloader:
         ensure_dir(self.task.output_folder)
 
         fmt = _build_format_string(self.task.download_type, self.task.quality)
+        logger.info(
+            "Download config: type=%s, quality=%s, format=%s",
+            self.task.download_type, self.task.quality, fmt,
+        )
 
         safe_title = sanitize_filename(self.task.title)
 
@@ -366,16 +352,10 @@ class Downloader:
             "retries": self.task.max_retries,
             "fragment_retries": 10,
             "ffmpeg_location": get_ffmpeg_path(),
-            # Use alternative player clients to avoid HTTP 403 Forbidden errors.
-            # YouTube blocks the default web client; ios/android clients bypass this.
-            "extractor_args": {"youtube": {"player_client": ["ios", "android", "web"]}},
-            "http_headers": {
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/128.0.0.0 Safari/537.36"
-                ),
-            },
+            # Let yt-dlp handle YouTube player-client negotiation automatically.
+            # Older workarounds that forced ios/android clients caused downloads
+            # to be limited to ≤360p pre-muxed streams.  Modern yt-dlp already
+            # picks the best client and retries on 403 errors internally.
         }
 
         if self.task.download_type == "Audio Only":
@@ -391,19 +371,13 @@ class Downloader:
             opts["merge_output_format"] = audio_fmt
 
         elif self.task.download_type in ("Video+Audio", "Video Only"):
-            # ── Video: ensure H.264 + AAC in MP4 ─────────────────────────
-            # If yt-dlp could not find a native H.264 stream (e.g. the video
-            # is only available in VP9/AV1), FFmpegVideoConvertor re-encodes
-            # it to H.264 so it plays on every device without extra codecs.
-            opts["postprocessors"] = [
-                {
-                    # Re-encode to H.264/AAC only when the merged output is
-                    # NOT already in an MP4-friendly codec pair.
-                    # 'mp4' here means "ensure output is playable MP4".
-                    "key": "FFmpegVideoConvertor",
-                    "preferedformat": "mp4",   # yt-dlp spelling (one 'r')
-                }
-            ]
+            # ── Video: merge_output_format='mp4' already merges the separate
+            # video + audio streams into an MP4 container using stream copy
+            # (no re-encoding).  We do NOT add FFmpegVideoConvertor here
+            # because it calls ffmpeg WITHOUT '-c copy', causing a full
+            # re-encode at ffmpeg's low default quality — destroying the
+            # original 1080p/4K bitrate.
+            pass
 
         # ── Split / trim section ──────────────────────────────────────────────
         # Use yt-dlp's download_ranges to fetch only the requested slice.
@@ -529,6 +503,43 @@ class Downloader:
                 return True
             except Exception:
                 continue
+
+        # Last resort: try without any cookies at all.
+        try:
+            logger.info("Download: trying without cookies as last resort")
+            self.task.cookies_file = ""
+            self.task.status = DownloadStatus.DOWNLOADING
+            self.task.progress = 0.0
+            self._notify()
+
+            opts = self._build_ydl_opts()
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([self.task.url])
+
+            if self._cancel_event.is_set():
+                self.task.status = DownloadStatus.CANCELLED
+            else:
+                self.task.status = DownloadStatus.COMPLETED
+                self.task.progress = 100.0
+                logger.info("Download succeeded without cookies")
+                append_history(
+                    {
+                        "title": self.task.title,
+                        "url": self.task.url,
+                        "output_file": self.task.output_file,
+                        "output_folder": self.task.output_folder,
+                        "download_type": self.task.download_type,
+                        "quality": self.task.quality,
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "thumbnail_url": self.task.thumbnail_url,
+                        "uploader": self.task.uploader,
+                        "duration": self.task.duration,
+                    }
+                )
+            self._notify()
+            return True
+        except Exception:
+            pass
 
         # Restore original cookie setting
         self.task.cookies_file = failed
