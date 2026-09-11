@@ -156,6 +156,19 @@ uv run pyinstaller YTDownloader.spec
 
 The standalone, fully-bundled `.exe` will be generated in the `dist/` folder!
 
+### ⚠ Windows SmartScreen Warning
+
+When you download and run the `.exe` from GitHub Releases, Windows SmartScreen may show an **"Windows protected your PC"** warning because the binary is not yet widely recognized.
+
+**To run the app:**
+
+1. Click **"More info"** on the SmartScreen popup.
+2. Click **"Run anyway"**.
+
+Alternatively, you can right-click the downloaded `.exe` → **Properties** → check **"Unblock"** → **OK**, then run it normally.
+
+> **Note:** The app is fully open-source — you can inspect the source code and build the `.exe` yourself using the instructions above.
+
 ---
 
 ## ⚙ Settings File
