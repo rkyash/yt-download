@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 
+
 is_windows = sys.platform == 'win32'
 ffmpeg_binary = 'ffmpeg.exe' if is_windows else 'ffmpeg'
 
@@ -8,7 +9,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[(ffmpeg_binary, '.')],
-    datas=[],
+    datas=[('app_icon.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
