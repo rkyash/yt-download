@@ -117,6 +117,10 @@ def fetch_video_info(url: str, cookies_file: str = "") -> VideoInfo:
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": False,   # allow playlist detection
+        # NOTE: Do NOT use ios/android player_client here — those clients only
+        # return low-quality pre-muxed formats (≤360p).  The web client gives
+        # us all adaptive DASH formats (720p, 1080p, 4K …).  403 errors only
+        # happen during actual stream download, not during metadata extraction.
     }
     if cookies_file and os.path.isfile(cookies_file):
         ydl_opts["cookiefile"] = cookies_file
@@ -356,7 +360,18 @@ class Downloader:
             "merge_output_format": "mp4",
             "writethumbnail": False,
             "retries": self.task.max_retries,
+            "fragment_retries": 10,
             "ffmpeg_location": get_ffmpeg_path(),
+            # Use alternative player clients to avoid HTTP 403 Forbidden errors.
+            # YouTube blocks the default web client; ios/android clients bypass this.
+            "extractor_args": {"youtube": {"player_client": ["ios", "android", "web"]}},
+            "http_headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/128.0.0.0 Safari/537.36"
+                ),
+            },
         }
 
         if self.task.download_type == "Audio Only":
