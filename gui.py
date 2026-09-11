@@ -50,6 +50,7 @@ from utils import (
     format_eta,
     format_filesize,
     format_speed,
+    get_resource_path,
     is_valid_youtube_url,
     is_playlist_url,
     normalize_url,
@@ -316,7 +317,7 @@ class App(ctk.CTk):
             except Exception as e:
                 logger.warning(f"Could not set AppUserModelID: {e}")
 
-        icon_path = os.path.join(os.path.dirname(__file__), "app_icon.ico")
+        icon_path = get_resource_path("app_icon.ico")
         if os.path.exists(icon_path):
             try:
                 self.iconbitmap(icon_path)
