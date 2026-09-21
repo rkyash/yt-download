@@ -45,6 +45,14 @@ from downloader import (
     fetch_video_info,
 )
 from settings import settings, load_history, save_history
+from splitter import (
+    SplitStatus,
+    SplitTask,
+    VideoFileInfo,
+    probe_video,
+    split_video,
+    SUPPORTED_VIDEO_EXTENSIONS,
+)
 from utils import (
     format_duration,
     format_eta,
@@ -371,6 +379,7 @@ class App(ctk.CTk):
         self._build_home_page()
         self._build_queue_page()
         self._build_history_page()
+        self._build_split_video_page()
         self._build_settings_page()
         self._build_about_page()
 
@@ -382,7 +391,7 @@ class App(ctk.CTk):
 
     def _build_sidebar(self) -> None:
         sb = self._sidebar
-        sb.grid_rowconfigure(6, weight=1)
+        sb.grid_rowconfigure(8, weight=1)
 
         # Logo / app name
         logo_frame = ctk.CTkFrame(sb, fg_color="transparent")
@@ -406,6 +415,7 @@ class App(ctk.CTk):
             ("🏠", "Home",     "home"),
             ("⬇", "Queue",    "queue"),
             ("📋", "History",  "history"),
+            ("✂",  "Split",    "split"),
             ("⚙", "Settings", "settings"),
             ("ℹ", "About",    "about"),
         ]
@@ -420,18 +430,18 @@ class App(ctk.CTk):
 
         # Theme toggle at bottom
         ctk.CTkFrame(sb, height=1, fg_color=("gray80", "gray30")).grid(
-            row=7, column=0, sticky="ew", padx=12, pady=4
+            row=9, column=0, sticky="ew", padx=12, pady=4
         )
         ctk.CTkLabel(sb, text="Appearance", font=ctk.CTkFont(size=11),
                      text_color=("gray30", "gray55")).grid(
-            row=8, column=0, sticky="w", padx=16)
+            row=10, column=0, sticky="w", padx=16)
         self._theme_menu = ctk.CTkOptionMenu(
             sb,
             values=THEME_OPTIONS,
             command=self._on_theme_change,
         )
         self._theme_menu.set(settings.get("theme", "dark"))
-        self._theme_menu.grid(row=9, column=0, padx=10, pady=(2, 16), sticky="ew")
+        self._theme_menu.grid(row=11, column=0, padx=10, pady=(2, 16), sticky="ew")
 
     # ------------------------------------------------------------------
     # Page management
@@ -892,6 +902,420 @@ class App(ctk.CTk):
             entries.remove(entry_to_remove)
             save_history(entries)
             self._refresh_history()
+
+    # ==================================================================
+    # SPLIT VIDEO PAGE
+    # ==================================================================
+
+    def _build_split_video_page(self) -> None:
+        """Build the standalone video-splitting page."""
+        page = ctk.CTkScrollableFrame(self._content, fg_color="transparent")
+        page.grid_columnconfigure(0, weight=1)
+        self._pages["split"] = page
+
+        # ---- Section title ----
+        SectionTitle(page, text="✂  Split Video").grid(
+            row=0, column=0, sticky="w", padx=28, pady=(28, 4))
+        ctk.CTkLabel(
+            page,
+            text="Split a local video file into multiple parts using FFmpeg (stream-copy, no re-encoding).",
+            font=ctk.CTkFont(size=12),
+            text_color=("gray50", "gray60"),
+        ).grid(row=1, column=0, sticky="w", padx=28, pady=(0, 8))
+
+        # ---- Source video card ----
+        src_card = Card(page)
+        src_card.grid(row=2, column=0, sticky="ew", padx=20, pady=8)
+        src_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(src_card, text="Source Video",
+                     font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 2))
+
+        self._sp_source_var = tk.StringVar()
+        self._sp_source_entry = ctk.CTkEntry(
+            src_card, textvariable=self._sp_source_var,
+            placeholder_text="Click Browse to select a video file…",
+            height=44, font=ctk.CTkFont(size=13),
+            corner_radius=10, state="disabled",
+        )
+        self._sp_source_entry.grid(row=1, column=0, sticky="ew", padx=(16, 4), pady=8)
+
+        ctk.CTkButton(
+            src_card, text="📂 Browse", width=110, height=44, corner_radius=10,
+            command=self._sp_browse_source,
+        ).grid(row=1, column=1, padx=(4, 16), pady=8)
+
+        # File info sub-card (hidden initially)
+        self._sp_info_frame = ctk.CTkFrame(src_card, fg_color="transparent")
+        self._sp_info_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 12))
+        self._sp_info_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        self._sp_info_frame.grid_remove()
+
+        self._sp_info_labels: dict[str, tk.StringVar] = {}
+        for col, key in enumerate(("Duration", "Codec", "Resolution", "Size")):
+            var = tk.StringVar(value="")
+            self._sp_info_labels[key] = var
+            ctk.CTkLabel(
+                self._sp_info_frame, text=key,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=("gray50", "gray60"),
+            ).grid(row=0, column=col, sticky="w", padx=8, pady=(4, 0))
+            ctk.CTkLabel(
+                self._sp_info_frame, textvariable=var,
+                font=ctk.CTkFont(size=12),
+            ).grid(row=1, column=col, sticky="w", padx=8, pady=(0, 4))
+
+        # ---- Segment duration card ----
+        dur_card = Card(page)
+        dur_card.grid(row=3, column=0, sticky="ew", padx=20, pady=8)
+        dur_card.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(dur_card, text="Segment Duration",
+                     font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=0, column=0, columnspan=3, sticky="w", padx=16, pady=(14, 2))
+
+        # Preset buttons
+        preset_frame = ctk.CTkFrame(dur_card, fg_color="transparent")
+        preset_frame.grid(row=1, column=0, columnspan=3, sticky="w", padx=16, pady=(4, 4))
+
+        self._sp_dur_var = tk.StringVar(value="5")
+        for minutes in (1, 5, 10, 30):
+            ctk.CTkButton(
+                preset_frame, text=f"{minutes} min",
+                width=70, height=34, corner_radius=8,
+                fg_color=("gray75", "gray25"),
+                hover_color=("gray65", "gray35"),
+                text_color=("black", "white"),
+                command=lambda m=minutes: self._sp_set_duration(m),
+            ).pack(side="left", padx=4)
+
+        ctk.CTkLabel(dur_card, text="Minutes:",
+                     font=ctk.CTkFont(size=12)).grid(
+            row=2, column=0, sticky="w", padx=16, pady=(4, 12))
+        self._sp_dur_entry = ctk.CTkEntry(
+            dur_card, textvariable=self._sp_dur_var,
+            width=100, height=40, corner_radius=10,
+            font=ctk.CTkFont(size=14),
+        )
+        self._sp_dur_entry.grid(row=2, column=1, sticky="w", padx=4, pady=(4, 12))
+        # Bind changes to refresh the summary
+        self._sp_dur_var.trace_add("write", lambda *_: self._sp_refresh_summary())
+
+        # ---- Destination folder card ----
+        dest_card = Card(page)
+        dest_card.grid(row=4, column=0, sticky="ew", padx=20, pady=8)
+        dest_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(dest_card, text="Destination Folder",
+                     font=ctk.CTkFont(size=14, weight="bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 2))
+
+        self._sp_dest_var = tk.StringVar()
+        self._sp_dest_entry = ctk.CTkEntry(
+            dest_card, textvariable=self._sp_dest_var,
+            placeholder_text="Select destination folder…",
+            height=44, font=ctk.CTkFont(size=13),
+            corner_radius=10,
+        )
+        self._sp_dest_entry.grid(row=1, column=0, sticky="ew", padx=(16, 4), pady=(0, 14))
+
+        ctk.CTkButton(
+            dest_card, text="📂", width=44, height=44, corner_radius=10,
+            command=self._sp_browse_dest,
+        ).grid(row=1, column=1, padx=(0, 16), pady=(0, 14))
+
+        # ---- Summary label ----
+        self._sp_summary_var = tk.StringVar(value="")
+        ctk.CTkLabel(
+            page, textvariable=self._sp_summary_var,
+            font=ctk.CTkFont(size=13),
+            text_color=("gray40", "gray65"),
+        ).grid(row=5, column=0, sticky="w", padx=28, pady=(4, 4))
+
+        # ---- Split button ----
+        self._sp_split_btn = ctk.CTkButton(
+            page, text="✂  Split Video",
+            height=52, corner_radius=12,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            command=self._sp_start_split,
+        )
+        self._sp_split_btn.grid(row=6, column=0, sticky="ew", padx=20, pady=(8, 4))
+
+        # ---- Progress section ----
+        self._sp_progress_frame = Card(page)
+        self._sp_progress_frame.grid(row=7, column=0, sticky="ew", padx=20, pady=8)
+        self._sp_progress_frame.grid_columnconfigure(0, weight=1)
+        self._sp_progress_frame.grid_remove()  # hidden until split starts
+
+        self._sp_progress_status_var = tk.StringVar(value="")
+        ctk.CTkLabel(
+            self._sp_progress_frame, textvariable=self._sp_progress_status_var,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 4))
+
+        self._sp_progress_var = tk.DoubleVar(value=0.0)
+        self._sp_progress_bar = ctk.CTkProgressBar(
+            self._sp_progress_frame, variable=self._sp_progress_var, height=12,
+        )
+        self._sp_progress_bar.grid(row=1, column=0, sticky="ew", padx=16, pady=4)
+
+        self._sp_progress_detail_var = tk.StringVar(value="")
+        ctk.CTkLabel(
+            self._sp_progress_frame, textvariable=self._sp_progress_detail_var,
+            font=ctk.CTkFont(size=12),
+            text_color=("gray50", "gray60"), anchor="w",
+        ).grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 4))
+
+        # Open folder button (shown on completion)
+        self._sp_open_folder_btn = ctk.CTkButton(
+            self._sp_progress_frame, text="📂  Open Destination Folder",
+            height=38, corner_radius=10,
+            command=lambda: open_in_file_manager(self._sp_dest_var.get()),
+        )
+        self._sp_open_folder_btn.grid(row=3, column=0, sticky="w", padx=16, pady=(4, 14))
+        self._sp_open_folder_btn.grid_remove()
+
+        # ---- Status message ----
+        self._sp_status_var = tk.StringVar(value="")
+        self._sp_status_label = ctk.CTkLabel(
+            page, textvariable=self._sp_status_var,
+            font=ctk.CTkFont(size=12),
+            text_color=("gray50", "gray60"),
+        )
+        self._sp_status_label.grid(row=8, column=0, sticky="w", padx=28, pady=(0, 24))
+
+        # ---- Internal state ----
+        self._sp_file_info: Optional[VideoFileInfo] = None
+        self._sp_cancel_event: Optional[threading.Event] = None
+        self._sp_current_task: Optional[SplitTask] = None
+        self._sp_pending_update: Optional[SplitTask] = None
+        self._sp_update_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Split page: helpers
+    # ------------------------------------------------------------------
+
+    def _sp_set_status(self, text: str, error: bool = False) -> None:
+        self._sp_status_var.set(text)
+        color = ("#C0392B", "#E74C3C") if error else ("gray50", "gray60")
+        self._sp_status_label.configure(text_color=color)
+
+    def _sp_set_duration(self, minutes: int) -> None:
+        self._sp_dur_var.set(str(minutes))
+
+    def _sp_refresh_summary(self) -> None:
+        """Update the summary label based on current file info and duration."""
+        info = self._sp_file_info
+        if not info:
+            self._sp_summary_var.set("")
+            return
+        try:
+            seg_min = float(self._sp_dur_var.get())
+        except (ValueError, TypeError):
+            self._sp_summary_var.set("⚠ Enter a valid duration in minutes.")
+            return
+        if seg_min <= 0:
+            self._sp_summary_var.set("⚠ Duration must be greater than zero.")
+            return
+
+        import math
+        seg_sec = seg_min * 60
+        num_parts = math.ceil(info.duration / seg_sec)
+        each = format_duration(int(seg_sec)) if seg_sec < info.duration else format_duration(int(info.duration))
+        self._sp_summary_var.set(
+            f"Will produce {num_parts} part{'s' if num_parts != 1 else ''} "
+            f"of ~{each} each  ·  Total: {format_duration(int(info.duration))}"
+        )
+
+    # ------------------------------------------------------------------
+    # Split page: browse source video
+    # ------------------------------------------------------------------
+
+    def _sp_browse_source(self) -> None:
+        exts = " ".join(f"*{e}" for e in sorted(SUPPORTED_VIDEO_EXTENSIONS))
+        path = filedialog.askopenfilename(
+            title="Select Video File",
+            filetypes=[("Video files", exts), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        self._sp_source_var.set(path)
+        self._sp_file_info = None
+        self._sp_info_frame.grid_remove()
+        self._sp_set_status("Probing video file…")
+
+        # Default destination to the same directory as the source
+        if not self._sp_dest_var.get():
+            self._sp_dest_var.set(os.path.dirname(path))
+
+        threading.Thread(
+            target=self._sp_probe_thread,
+            args=(path,),
+            daemon=True,
+        ).start()
+
+    def _sp_probe_thread(self, path: str) -> None:
+        try:
+            info = probe_video(path)
+            self.after(0, self._sp_on_probe_ok, info)
+        except ValueError as exc:
+            self.after(0, self._sp_on_probe_error, str(exc))
+
+    def _sp_on_probe_ok(self, info: VideoFileInfo) -> None:
+        self._sp_file_info = info
+        self._sp_info_labels["Duration"].set(format_duration(int(info.duration)))
+        self._sp_info_labels["Codec"].set(
+            f"{info.video_codec}" + (f" / {info.audio_codec}" if info.audio_codec else "")
+        )
+        self._sp_info_labels["Resolution"].set(info.resolution or "N/A")
+        self._sp_info_labels["Size"].set(format_filesize(info.filesize))
+        self._sp_info_frame.grid()
+        self._sp_set_status(f"✅ {info.filename}")
+        self._sp_refresh_summary()
+
+    def _sp_on_probe_error(self, msg: str) -> None:
+        self._sp_file_info = None
+        self._sp_set_status(f"❌ {msg}", error=True)
+        self._sp_summary_var.set("")
+
+    # ------------------------------------------------------------------
+    # Split page: browse destination
+    # ------------------------------------------------------------------
+
+    def _sp_browse_dest(self) -> None:
+        initial = self._sp_dest_var.get() or os.path.expanduser("~")
+        folder = filedialog.askdirectory(initialdir=initial)
+        if folder:
+            self._sp_dest_var.set(folder)
+
+    # ------------------------------------------------------------------
+    # Split page: start split
+    # ------------------------------------------------------------------
+
+    def _sp_start_split(self) -> None:
+        # ── Validation ────────────────────────────────────────────────
+        if not self._sp_file_info:
+            self._sp_set_status("⚠ Please select a source video first.", error=True)
+            return
+
+        try:
+            seg_min = float(self._sp_dur_var.get())
+        except (ValueError, TypeError):
+            self._sp_set_status("⚠ Segment duration must be a number.", error=True)
+            return
+        if seg_min <= 0:
+            self._sp_set_status("⚠ Segment duration must be greater than zero.", error=True)
+            return
+
+        dest = self._sp_dest_var.get().strip()
+        if not dest:
+            self._sp_set_status("⚠ Please select a destination folder.", error=True)
+            return
+
+        # Check for existing files that would be overwritten
+        import math as _math
+        seg_sec = seg_min * 60
+        num_parts = _math.ceil(self._sp_file_info.duration / seg_sec)
+        ext = self._sp_file_info.extension
+        src_stem = os.path.splitext(self._sp_file_info.filename)[0].strip()
+        prefix = src_stem[:6] if src_stem else "video"
+        existing = [
+            f"{prefix}_part_{i+1:03d}{ext}" for i in range(num_parts)
+            if os.path.isfile(os.path.join(dest, f"{prefix}_part_{i+1:03d}{ext}"))
+        ]
+        if existing:
+            overwrite = messagebox.askyesno(
+                "Overwrite existing files?",
+                f"{len(existing)} output file(s) already exist in the destination folder.\n\n"
+                f"Overwrite them?",
+            )
+            if not overwrite:
+                return
+
+        # ── Build task and start ──────────────────────────────────────
+        task = SplitTask(
+            source_path=self._sp_file_info.path,
+            segment_duration=seg_sec,
+            destination_folder=dest,
+            video_info=self._sp_file_info,
+        )
+        self._sp_current_task = task
+        self._sp_cancel_event = threading.Event()
+
+        # UI: disable controls, show progress
+        self._sp_split_btn.configure(state="disabled", text="⏳ Splitting…")
+        self._sp_progress_frame.grid()
+        self._sp_open_folder_btn.grid_remove()
+        self._sp_progress_var.set(0.0)
+        self._sp_progress_status_var.set("Starting…")
+        self._sp_progress_detail_var.set("")
+        self._sp_set_status("")
+
+        # Start polling
+        self.after(300, self._sp_poll_progress)
+
+        threading.Thread(
+            target=split_video,
+            args=(task, self._sp_on_progress, self._sp_cancel_event),
+            daemon=True,
+        ).start()
+
+    def _sp_on_progress(self, task: SplitTask) -> None:
+        """Called from background thread — store the update for polling."""
+        with self._sp_update_lock:
+            self._sp_pending_update = task
+
+    def _sp_poll_progress(self) -> None:
+        """Main-thread poller for split progress updates."""
+        with self._sp_update_lock:
+            task = self._sp_pending_update
+            self._sp_pending_update = None
+
+        if task:
+            if task.status == SplitStatus.VALIDATING:
+                self._sp_progress_status_var.set("Validating…")
+
+            elif task.status == SplitStatus.SPLITTING:
+                pct = (task.parts_done / task.total_parts) if task.total_parts else 0
+                self._sp_progress_var.set(pct)
+                self._sp_progress_status_var.set(
+                    f"Splitting part {task.current_part} of {task.total_parts}…"
+                )
+                self._sp_progress_detail_var.set(
+                    f"{task.parts_done} / {task.total_parts} parts completed  "
+                    f"({task.parts_done / task.total_parts * 100:.0f}%)"
+                    if task.total_parts else ""
+                )
+
+            elif task.status == SplitStatus.COMPLETED:
+                self._sp_progress_var.set(1.0)
+                self._sp_progress_status_var.set(
+                    f"✅ Done! {task.total_parts} parts saved."
+                )
+                self._sp_progress_detail_var.set(
+                    f"Output: {task.destination_folder}"
+                )
+                self._sp_progress_bar.configure(progress_color=("#27AE60", "#2ECC71"))
+                self._sp_open_folder_btn.grid()
+                self._sp_split_btn.configure(state="normal", text="✂  Split Video")
+                return  # stop polling
+
+            elif task.status == SplitStatus.ERROR:
+                self._sp_progress_status_var.set("❌ Split failed")
+                self._sp_progress_detail_var.set(task.error_message)
+                self._sp_progress_bar.configure(progress_color=("#C0392B", "#E74C3C"))
+                self._sp_split_btn.configure(state="normal", text="✂  Split Video")
+                self._sp_set_status(f"❌ {task.error_message}", error=True)
+                return  # stop polling
+
+        # Continue polling while the split is in progress
+        if self._sp_current_task and self._sp_current_task.status in (
+            SplitStatus.IDLE, SplitStatus.VALIDATING, SplitStatus.SPLITTING,
+        ):
+            self.after(300, self._sp_poll_progress)
 
     # ==================================================================
     # SETTINGS PAGE
